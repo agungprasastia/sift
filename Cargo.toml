@@ -45,6 +45,7 @@ clap = { version = "4", features = ["derive"] }
 criterion = "0.8"
 ignore = "0.4"
 memchr = "2"
+tempfile = "3"
 thiserror = "2"
 tree-sitter = "0.25"
 tree-sitter-rust = "0.24"

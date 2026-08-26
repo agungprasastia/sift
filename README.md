@@ -84,9 +84,10 @@ Cross-language ownership remains explicit and all unsafe Rust remains strictly i
    - Production path uses pure Rust `sift_core::fnv1a_hash` to eliminate FFI transition overhead while matching C throughput.
 3. **Newline Indexing**:
    - Production path uses pure Rust / `memchr` which runs ~2.5x faster than scalar C loops.
-4. **Symbol & Batch Search**:
-   - Production repository symbol search uses reusable `memmem::Finder`, which runs up to ~14x faster than scalar C loops on large buffers.
-   - C `sift_find_bytes` is maintained for small bounded micro-lookups where setup latency is minimal (~5.5 ns).
+4. **Symbol & Substring Search**:
+   - Production symbol indexing search (`RepositoryIndex::find`) currently uses Rust `str::contains()`.
+   - `memmem::Finder` is benchmarked as the preferred candidate for repeated multi-file search.
+   - C `sift_find_bytes` is maintained as a bounded micro-lookup native primitive (~5.5 ns latency on immediate match).
 
 ## Testing & validation
 
@@ -98,11 +99,16 @@ cargo build --workspace --release
 cargo bench --bench ffi_bench
 ```
 
-### Sanitizers & Static Analysis Status
+### Compiler Warnings, Static Analysis & Sanitizers Status
 
-- **Sanitizer Support**: Implemented in `build.rs` via `SIFT_SANITIZERS=1` (`-fsanitize=address,undefined -fno-omit-frame-pointer`).
-- **Sanitizer Execution**: Configured for Linux/macOS nightly toolchains. (Not executed on Windows MSVC host).
-- **Static Analysis**: MSVC `/W4` with zero warnings executed. GCC/Clang warning flags configured (`-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wformat=2 -Wundef`).
+- **Compiler Warnings**:
+  - MSVC `/W4`: Executed with 0 warnings.
+  - GCC/Clang flags (`-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wformat=2 -Wundef`): Configured in `build.rs`.
+- **Static Analysis Tools**:
+  - `clang-tidy`, `clang --analyze`, `gcc -fanalyzer`: Not executed in current environment.
+- **Sanitizers**:
+  - ASan/UBSan support configured in `build.rs` via `SIFT_SANITIZERS=1` (`-fsanitize=address,undefined -fno-omit-frame-pointer`).
+  - ASan/UBSan execution: Configured for Linux/macOS nightly toolchains; not executed on the current Windows MSVC host.
 
 ## Status
 

@@ -2,24 +2,19 @@
 //!
 //! This is the **only** crate in the workspace allowed to contain `unsafe`
 //! and raw C FFI declarations. Everything else consumes the safe functions
-//! below, which enforce the memory-safety contract documented in
+//! below, which enforce the memory-safety and lifecycle contracts documented in
 //! `native/include/sift_native.h`:
 //!
-//! ```text
-//! Rust &[u8]  ->  ptr + len  ->  C computation (stateless)
-//!             ->  offset/count/hash  ->  Rust validation
-//! ```
-//!
-//! The C side never allocates, never retains pointers past the call, and
-//! reports "not found" as `SIZE_MAX`; these wrappers translate that into
-//! `Option<usize>` and re-validate every offset against the input length.
+//! The native layer contains both stateless byte primitives (`find_bytes`,
+//! `hash_bytes`, `count_byte`, `find_many`, `index_newlines`) and explicitly-managed
+//! stateful resources (`Arena`, `NativeBuffer`, `NativeScanner`).
 //!
 //! # Proof strategy
 //!
 //! These FFI calls execute real compiled C and therefore cannot run under
 //! Miri. Correctness is instead proven by differential testing against plain
-//! Rust reference implementations (`tests/differential.rs`) covering fixed
-//! edge cases plus deterministic pseudo-random inputs.
+//! Rust reference implementations (`tests/differential.rs`) and 10,000+ iteration
+//! randomized fuzzing (`tests/fuzz_primitives.rs`).
 
 /// Name of the native backend, for reporting in CLI output.
 pub const BACKEND_NAME: &str = "C11";

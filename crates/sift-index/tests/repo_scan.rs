@@ -114,3 +114,50 @@ fn scanner_diagnostics_and_warning_accessors() {
     assert_eq!(index.warnings_count(), 0);
     assert_eq!(index.stats().warnings_count, 0);
 }
+
+#[test]
+fn runtime_temp_repo_gitignore_filtering() {
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let root = tmp.path();
+
+    std::fs::write(root.join(".gitignore"), "ignored.rs\nignored_dir/\n")
+        .expect("write .gitignore");
+
+    std::fs::write(root.join("visible.rs"), "pub fn visible_fn() {}\n").expect("write visible.rs");
+
+    std::fs::write(root.join("ignored.rs"), "pub fn ignored_fn() {}\n").expect("write ignored.rs");
+
+    let ignored_dir = root.join("ignored_dir");
+    std::fs::create_dir_all(&ignored_dir).expect("create ignored_dir");
+    std::fs::write(ignored_dir.join("hidden.rs"), "pub fn hidden_fn() {}\n")
+        .expect("write hidden.rs");
+
+    let index = RepositoryIndex::scan(root).expect("scan temp repo");
+
+    let file_paths: Vec<String> = index
+        .files()
+        .iter()
+        .map(|f| {
+            f.path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+
+    assert_eq!(file_paths, vec!["visible.rs".to_string()]);
+
+    assert!(
+        !index.find("visible_fn").is_empty(),
+        "visible_fn must be found"
+    );
+    assert!(
+        index.find("ignored_fn").is_empty(),
+        "ignored_fn must NOT be found"
+    );
+    assert!(
+        index.find("hidden_fn").is_empty(),
+        "hidden_fn must NOT be found"
+    );
+}

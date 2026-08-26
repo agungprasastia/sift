@@ -1,27 +1,26 @@
 /*
- * Sift native accelerator — C11 byte-level primitives (M0).
+ * Sift native accelerator — C11 byte-level primitives & scratch resources.
  *
  * OWNERSHIP & MEMORY SAFETY CONTRACT
  * ==================================
  *
- * Rust owns all memory. Every function in this header is a *stateless*
- * accelerator over borrowed memory:
+ * The native layer contains both stateless byte primitives and explicitly-owned
+ * stateful scratch resources:
  *
- *   - Inputs are `pointer + length` pairs; the callee borrows them only for
- *     the duration of the call and never stores, retains, or frees them.
- *   - No allocation happens here: no malloc/calloc/realloc/free.
- *   - No global mutable state. Every function is thread-safe and reentrant.
- *   - Source code is treated as raw bytes; NUL bytes are ordinary data and
- *     strings are never assumed to be null-terminated.
- *   - All lengths, capacities, offsets and counts use `size_t`; all index
- *     arithmetic stays inside `[data, data + data_len)`.
- *   - "Not found" is reported as `SIZE_MAX` (see SIFT_NOT_FOUND); callers in
- *     Rust re-validate every returned offset before use.
+ *   - Stateless byte primitives (sift_find_bytes, sift_hash_bytes, sift_count_byte,
+ *     sift_find_many, sift_index_newlines) receive borrowed `pointer + length` pairs,
+ *     store no pointers past the call, keep no global state, and allocate nothing.
+ *   - Managed native components (SiftArena, SiftBuffer, SiftScanner) have explicit
+ *     ownership lifecycles (init -> use -> reset -> destroy). SiftArena and SiftBuffer
+ *     own their backing data allocations until explicitly destroyed.
+ *   - Rust owns application semantics and long-lived state.
+ *   - All lengths, capacities, offsets and counts use `size_t`.
+ *   - "Not found" is reported as `SIZE_MAX` (SIFT_NOT_FOUND); callers in
+ *     Rust re-validate every returned offset against input bounds.
  *
  * NULL pointers are only valid together with a zero length. Passing
- * `NULL` with a non-zero length returns the documented defensive result
- * instead of dereferencing (Rust never does this, but the contract holds
- * regardless).
+ * `NULL` with a non-zero length returns the documented defensive error/result
+ * instead of dereferencing.
  */
 #ifndef SIFT_NATIVE_H
 #define SIFT_NATIVE_H

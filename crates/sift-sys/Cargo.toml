@@ -10,5 +10,8 @@ build = "build.rs"
 [build-dependencies]
 cc = { workspace = true }
 
+[dev-dependencies]
+memchr = { workspace = true }
+
 [lints]
 workspace = true

@@ -1,4 +1,4 @@
-//! Comprehensive C vs Rust benchmarks (Naive Rust & Optimized Rust via memchr / memmem::Finder).
+//! Comprehensive and verified C vs Rust benchmarks on deterministic non-repetitive datasets.
 
 use std::hint::black_box;
 
@@ -6,9 +6,39 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use memchr::memmem;
 use sift_sys::{Arena, count_byte, find_bytes, find_many, hash_bytes, index_newlines};
 
-const UNIT: &str = "fn sample(x: usize) -> usize {\n    let acc = x.wrapping_mul(31);\n    struct Frame { id: u32 }\n    acc + Frame { id: 1 }.id as usize\n}\n\nimpl Sample {\n    fn build() -> Self {\n        Self {}\n    }\n}\n\n";
+fn generate_corpus(size: usize, seed: u64) -> Vec<u8> {
+    let mut x = seed;
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut data = Vec::with_capacity(size);
+    for _ in 0..size {
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        x = x.wrapping_mul(0x2545_F491_4F6C_DD1D);
+        let idx = (x % ALPHABET.len() as u64) as usize;
+        data.push(ALPHABET[idx]);
+    }
+    data
+}
+
+fn with_needle_at(mut data: Vec<u8>, offset: usize, needle: &[u8]) -> Vec<u8> {
+    assert!(offset + needle.len() <= data.len());
+    data[offset..offset + needle.len()].copy_from_slice(needle);
+    data
+}
 
 /* ---------- Rust baseline implementations ---------- */
+
+fn baseline_find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if needle.len() > haystack.len() {
+        return None;
+    }
+    let last = haystack.len() - needle.len();
+    (0..=last).find(|&i| &haystack[i..i + needle.len()] == needle)
+}
 
 fn baseline_hash(data: &[u8]) -> u64 {
     const BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -49,60 +79,83 @@ fn bench_find_bytes_oneshot(c: &mut Criterion) {
         ("1MB", 1024 * 1024),
     ];
 
-    for (label, size) in sizes {
-        let repeat_count = (size / UNIT.len()) + 1;
-        let full_data = UNIT.repeat(repeat_count).into_bytes();
-        let payload = &full_data[..size];
+    let needle = b"__TARGET_NEEDLE_EXACT__".as_slice();
+    let absent = b"__ABSENT_NEEDLE_EXACT__".as_slice();
 
+    for (label, size) in sizes {
         group.throughput(Throughput::Bytes(size as u64));
 
-        // 1. Beginning position
-        let needle_beg = b"fn sample".as_slice();
+        let hay_beg = with_needle_at(generate_corpus(size, 0x1111), 0, needle);
+        assert_eq!(memmem::find(&hay_beg, needle), Some(0));
+        assert_eq!(find_bytes(&hay_beg, needle), Some(0));
+
         group.bench_with_input(
             BenchmarkId::new("c/beginning", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| find_bytes(black_box(data), black_box(needle_beg)));
+            &hay_beg,
+            |b, data| {
+                b.iter(|| find_bytes(black_box(data), black_box(needle)));
             },
         );
         group.bench_with_input(
             BenchmarkId::new("rust_memmem_oneshot/beginning", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| memmem::find(black_box(data), black_box(needle_beg)));
+            &hay_beg,
+            |b, data| {
+                b.iter(|| memmem::find(black_box(data), black_box(needle)));
             },
         );
+        if size <= 10 * 1024 {
+            group.bench_with_input(
+                BenchmarkId::new("rust_naive/beginning", label),
+                &hay_beg,
+                |b, data| {
+                    b.iter(|| baseline_find(black_box(data), black_box(needle)));
+                },
+            );
+        }
 
-        // 2. Middle position
-        let mid_offset = size / 2;
-        let needle_mid = if size >= 64 {
-            &payload[mid_offset..mid_offset + 12]
-        } else {
-            needle_beg
-        };
-        group.bench_with_input(BenchmarkId::new("c/middle", label), &payload, |b, &data| {
-            b.iter(|| find_bytes(black_box(data), black_box(needle_mid)));
+        let mid_pos = size / 2;
+        let hay_mid = with_needle_at(generate_corpus(size, 0x2222), mid_pos, needle);
+        assert_eq!(memmem::find(&hay_mid, needle), Some(mid_pos));
+        assert_eq!(find_bytes(&hay_mid, needle), Some(mid_pos));
+
+        group.bench_with_input(BenchmarkId::new("c/middle", label), &hay_mid, |b, data| {
+            b.iter(|| find_bytes(black_box(data), black_box(needle)));
         });
         group.bench_with_input(
             BenchmarkId::new("rust_memmem_oneshot/middle", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| memmem::find(black_box(data), black_box(needle_mid)));
+            &hay_mid,
+            |b, data| {
+                b.iter(|| memmem::find(black_box(data), black_box(needle)));
             },
         );
 
-        // 3. Absent
-        let needle_absent = b"__definitely_not_present_in_source__".as_slice();
-        group.bench_with_input(BenchmarkId::new("c/absent", label), &payload, |b, &data| {
-            b.iter(|| find_bytes(black_box(data), black_box(needle_absent)));
-        });
+        let hay_absent = generate_corpus(size, 0x3333);
+        assert_eq!(memmem::find(&hay_absent, absent), None);
+        assert_eq!(find_bytes(&hay_absent, absent), None);
+
         group.bench_with_input(
-            BenchmarkId::new("rust_memmem_oneshot/absent", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| memmem::find(black_box(data), black_box(needle_absent)));
+            BenchmarkId::new("c/absent", label),
+            &hay_absent,
+            |b, data| {
+                b.iter(|| find_bytes(black_box(data), black_box(absent)));
             },
         );
+        group.bench_with_input(
+            BenchmarkId::new("rust_memmem_oneshot/absent", label),
+            &hay_absent,
+            |b, data| {
+                b.iter(|| memmem::find(black_box(data), black_box(absent)));
+            },
+        );
+        if size <= 10 * 1024 {
+            group.bench_with_input(
+                BenchmarkId::new("rust_naive/absent", label),
+                &hay_absent,
+                |b, data| {
+                    b.iter(|| baseline_find(black_box(data), black_box(absent)));
+                },
+            );
+        }
     }
     group.finish();
 }
@@ -121,95 +174,112 @@ fn bench_find_bytes_reused_finder(c: &mut Criterion) {
         ("10MB", 10 * 1024 * 1024),
     ];
 
-    for (label, size) in sizes {
-        let repeat_count = (size / UNIT.len()) + 1;
-        let full_data = UNIT.repeat(repeat_count).into_bytes();
-        let payload = &full_data[..size];
+    let needle = b"__TARGET_NEEDLE_EXACT__".as_slice();
+    let absent = b"__ABSENT_NEEDLE_EXACT__".as_slice();
+    let finder_needle = memmem::Finder::new(needle);
+    let finder_absent = memmem::Finder::new(absent);
 
+    for (label, size) in sizes {
         group.throughput(Throughput::Bytes(size as u64));
 
-        // 1. Beginning position
-        let needle_beg = b"fn sample".as_slice();
-        let finder_beg = memmem::Finder::new(needle_beg);
+        let hay_beg = with_needle_at(generate_corpus(size, 0x4444), 0, needle);
+        assert_eq!(finder_needle.find(&hay_beg), Some(0));
+        assert_eq!(find_bytes(&hay_beg, needle), Some(0));
+
         group.bench_with_input(
             BenchmarkId::new("c/beginning", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| find_bytes(black_box(data), black_box(needle_beg)));
+            &hay_beg,
+            |b, data| {
+                b.iter(|| find_bytes(black_box(data), black_box(needle)));
             },
         );
         group.bench_with_input(
             BenchmarkId::new("rust_reused_finder/beginning", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| finder_beg.find(black_box(data)));
+            &hay_beg,
+            |b, data| {
+                b.iter(|| finder_needle.find(black_box(data)));
             },
         );
 
-        // 2. Middle position
-        let mid_offset = size / 2;
-        let needle_mid = if size >= 64 {
-            &payload[mid_offset..mid_offset + 12]
-        } else {
-            needle_beg
-        };
-        let finder_mid = memmem::Finder::new(needle_mid);
-        group.bench_with_input(BenchmarkId::new("c/middle", label), &payload, |b, &data| {
-            b.iter(|| find_bytes(black_box(data), black_box(needle_mid)));
+        let mid_pos = size / 2;
+        let hay_mid = with_needle_at(generate_corpus(size, 0x5555), mid_pos, needle);
+        assert_eq!(finder_needle.find(&hay_mid), Some(mid_pos));
+        assert_eq!(find_bytes(&hay_mid, needle), Some(mid_pos));
+
+        group.bench_with_input(BenchmarkId::new("c/middle", label), &hay_mid, |b, data| {
+            b.iter(|| find_bytes(black_box(data), black_box(needle)));
         });
         group.bench_with_input(
             BenchmarkId::new("rust_reused_finder/middle", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| finder_mid.find(black_box(data)));
+            &hay_mid,
+            |b, data| {
+                b.iter(|| finder_needle.find(black_box(data)));
             },
         );
 
-        // 3. End position
-        let end_offset = size.saturating_sub(20);
-        let needle_end = &payload[end_offset..];
-        let finder_end = memmem::Finder::new(needle_end);
-        group.bench_with_input(BenchmarkId::new("c/end", label), &payload, |b, &data| {
-            b.iter(|| find_bytes(black_box(data), black_box(needle_end)));
+        let end_pos = size - needle.len();
+        let hay_end = with_needle_at(generate_corpus(size, 0x6666), end_pos, needle);
+        assert_eq!(finder_needle.find(&hay_end), Some(end_pos));
+        assert_eq!(find_bytes(&hay_end, needle), Some(end_pos));
+
+        group.bench_with_input(BenchmarkId::new("c/end", label), &hay_end, |b, data| {
+            b.iter(|| find_bytes(black_box(data), black_box(needle)));
         });
         group.bench_with_input(
             BenchmarkId::new("rust_reused_finder/end", label),
-            &payload,
-            |b, &data| {
-                b.iter(|| finder_end.find(black_box(data)));
+            &hay_end,
+            |b, data| {
+                b.iter(|| finder_needle.find(black_box(data)));
             },
         );
 
-        // 4. Absent
-        let needle_absent = b"__definitely_not_present_in_source__".as_slice();
-        let finder_absent = memmem::Finder::new(needle_absent);
-        group.bench_with_input(BenchmarkId::new("c/absent", label), &payload, |b, &data| {
-            b.iter(|| find_bytes(black_box(data), black_box(needle_absent)));
-        });
+        let hay_absent = generate_corpus(size, 0x7777);
+        assert_eq!(finder_absent.find(&hay_absent), None);
+        assert_eq!(find_bytes(&hay_absent, absent), None);
+
+        group.bench_with_input(
+            BenchmarkId::new("c/absent", label),
+            &hay_absent,
+            |b, data| {
+                b.iter(|| find_bytes(black_box(data), black_box(absent)));
+            },
+        );
         group.bench_with_input(
             BenchmarkId::new("rust_reused_finder/absent", label),
-            &payload,
-            |b, &data| {
+            &hay_absent,
+            |b, data| {
                 b.iter(|| finder_absent.find(black_box(data)));
             },
         );
+    }
+    group.finish();
+}
 
-        // 5. Repetitive pattern
-        let needle_rep = b"a".repeat(16);
-        let rep_payload = b"a".repeat(size);
-        let finder_rep = memmem::Finder::new(&needle_rep);
+fn bench_adversarial_repetitive(c: &mut Criterion) {
+    let mut group = c.benchmark_group("adversarial_repetitive");
+    group.warm_up_time(std::time::Duration::from_millis(300));
+    group.measurement_time(std::time::Duration::from_millis(700));
+    group.sample_size(10);
+
+    let sizes = [("1KB", 1024), ("100KB", 100 * 1024), ("1MB", 1024 * 1024)];
+
+    for (label, size) in sizes {
+        // Pattern: "aaaa...aab" searched inside "aaaa...aaaa"
+        let needle = b"aaaaaaaaaaaaaaab".as_slice();
+        let payload = vec![b'a'; size];
+        let finder = memmem::Finder::new(needle);
+
+        assert_eq!(find_bytes(&payload, needle), None);
+        assert_eq!(finder.find(&payload), None);
+
+        group.bench_with_input(BenchmarkId::new("c", label), &payload, |b, data| {
+            b.iter(|| find_bytes(black_box(data), black_box(needle)));
+        });
         group.bench_with_input(
-            BenchmarkId::new("c/repetitive", label),
-            &&rep_payload[..],
-            |b, &data| {
-                b.iter(|| find_bytes(black_box(data), black_box(&needle_rep)));
-            },
-        );
-        group.bench_with_input(
-            BenchmarkId::new("rust_reused_finder/repetitive", label),
-            &&rep_payload[..],
-            |b, &data| {
-                b.iter(|| finder_rep.find(black_box(data)));
+            BenchmarkId::new("rust_reused_finder", label),
+            &payload,
+            |b, data| {
+                b.iter(|| finder.find(black_box(data)));
             },
         );
     }
@@ -217,36 +287,41 @@ fn bench_find_bytes_reused_finder(c: &mut Criterion) {
 }
 
 fn bench_batch_search(c: &mut Criterion) {
-    let payload = UNIT.repeat(1000).into_bytes();
-    let needles: &[&[u8]] = &[
-        b"wrapping_mul",
-        b"struct Frame",
-        b"impl Sample",
-        b"absent_symbol_alpha",
-        b"absent_symbol_beta",
-    ];
+    let corpus = generate_corpus(256 * 1024, 0x8888);
+    let n1 = b"__N1__".as_slice();
+    let n2 = b"__N2__".as_slice();
+    let n3 = b"__N3__".as_slice();
+    let n_absent = b"__N_ABS__".as_slice();
+
+    let mut hay = corpus;
+    hay = with_needle_at(hay, 1000, n1);
+    hay = with_needle_at(hay, 50000, n2);
+    hay = with_needle_at(hay, 150000, n3);
+
+    let needles: &[&[u8]] = &[n1, n2, n3, n_absent];
 
     let mut group = c.benchmark_group("batch_search");
     group.warm_up_time(std::time::Duration::from_millis(300));
     group.measurement_time(std::time::Duration::from_millis(700));
     group.sample_size(10);
-    group.throughput(Throughput::Bytes(payload.len() as u64));
+    group.throughput(Throughput::Bytes(hay.len() as u64));
 
     group.bench_function("c_find_many", |b| {
         let mut out = [sift_sys::Match {
             needle_index: 0,
             offset: 0,
-        }; 5];
+        }; 4];
         b.iter(|| {
-            let _ = find_many(black_box(&payload), black_box(needles), black_box(&mut out));
+            let _ = find_many(black_box(&hay), black_box(needles), black_box(&mut out));
         })
     });
 
-    group.bench_function("repeated_memmem", |b| {
+    group.bench_function("repeated_reused_finders", |b| {
+        let finders: Vec<memmem::Finder> = needles.iter().copied().map(memmem::Finder::new).collect();
         b.iter(|| {
             let mut matches = Vec::with_capacity(needles.len());
-            for (i, needle) in needles.iter().enumerate() {
-                if let Some(offset) = memmem::find(black_box(&payload), black_box(needle)) {
+            for (i, finder) in finders.iter().enumerate() {
+                if let Some(offset) = finder.find(black_box(&hay)) {
                     matches.push((i, offset));
                 }
             }
@@ -258,8 +333,11 @@ fn bench_batch_search(c: &mut Criterion) {
 }
 
 fn bench_newline_index(c: &mut Criterion) {
-    let payload = UNIT.repeat(1000).into_bytes();
-    let mut out = vec![0usize; payload.len() / 5];
+    let mut payload = generate_corpus(256 * 1024, 0x9999);
+    for i in (0..payload.len()).step_by(60) {
+        payload[i] = b'\n';
+    }
+    let mut out = vec![0usize; payload.len() / 10];
 
     let mut group = c.benchmark_group("index_newlines");
     group.warm_up_time(std::time::Duration::from_millis(300));
@@ -289,16 +367,15 @@ fn bench_newline_index(c: &mut Criterion) {
 }
 
 fn bench_primitives(c: &mut Criterion) {
-    let data_vec = UNIT.repeat(2000).into_bytes();
-    let data = data_vec.as_slice();
+    let data = generate_corpus(256 * 1024, 0xAAAA);
 
     let mut group = c.benchmark_group("hash_bytes");
     group.warm_up_time(std::time::Duration::from_millis(300));
     group.measurement_time(std::time::Duration::from_millis(700));
     group.sample_size(10);
     group.throughput(Throughput::Bytes(data.len() as u64));
-    group.bench_function("c", |b| b.iter(|| hash_bytes(black_box(data))));
-    group.bench_function("rust", |b| b.iter(|| baseline_hash(black_box(data))));
+    group.bench_function("c", |b| b.iter(|| hash_bytes(black_box(&data))));
+    group.bench_function("rust", |b| b.iter(|| baseline_hash(black_box(&data))));
     group.finish();
 
     let mut group = c.benchmark_group("count_byte");
@@ -306,12 +383,12 @@ fn bench_primitives(c: &mut Criterion) {
     group.measurement_time(std::time::Duration::from_millis(700));
     group.sample_size(10);
     group.throughput(Throughput::Bytes(data.len() as u64));
-    group.bench_function("c", |b| b.iter(|| count_byte(black_box(data), b'\n')));
+    group.bench_function("c", |b| b.iter(|| count_byte(black_box(&data), b'a')));
     group.bench_function("rust_iterator", |b| {
-        b.iter(|| baseline_count(black_box(data), b'\n'))
+        b.iter(|| baseline_count(black_box(&data), b'a'))
     });
     group.bench_function("rust_memchr", |b| {
-        b.iter(|| memchr::memchr_iter(b'\n', black_box(data)).count())
+        b.iter(|| memchr::memchr_iter(b'a', black_box(&data)).count())
     });
     group.finish();
 
@@ -345,6 +422,7 @@ criterion_group!(
     benches,
     bench_find_bytes_oneshot,
     bench_find_bytes_reused_finder,
+    bench_adversarial_repetitive,
     bench_batch_search,
     bench_newline_index,
     bench_primitives
