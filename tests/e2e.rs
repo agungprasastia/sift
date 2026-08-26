@@ -45,7 +45,7 @@ fn stats_command_prints_native_backend() {
     execute(Command::Stats { path: fixture() }, &mut sink).unwrap();
 
     let text = String::from_utf8(sink).unwrap();
-    assert!(text.contains("Files scanned: 10"));
+    assert!(text.contains("Files scanned: 11"));
     assert!(text.contains("Source files: 8"));
     assert!(text.contains("Symbols: 30"));
     assert!(text.contains("Native engine: enabled"));

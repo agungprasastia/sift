@@ -21,18 +21,30 @@ fn scans_expected_files_and_symbols() {
         .iter()
         .map(|f| f.path.to_string_lossy().into_owned())
         .collect();
-    for banned in ["secret.txt", "node_modules", "vendor", "ignored_dir"] {
+    for banned in [
+        "secret.txt",
+        "node_modules",
+        "vendor",
+        "ignored_dir",
+        "ignored.rs",
+        "hidden.rs",
+        "binary.rs",
+    ] {
         assert!(
             !all_paths.contains(banned),
             "{banned} leaked into the index"
         );
     }
 
-    // Binary sniffing keeps notes.bin out while it still counts as scanned.
+    // Binary sniffing keeps notes.bin and binary.rs out while they still count as scanned.
     assert!(!all_paths.contains("notes.bin"));
+    assert!(!all_paths.contains("binary.rs"));
 
     let stats = index.stats();
-    assert_eq!(stats.files_scanned, 10, "README.md + notes.bin + 8 sources");
+    assert_eq!(
+        stats.files_scanned, 11,
+        "README.md + notes.bin + binary.rs + 8 sources"
+    );
     assert_eq!(stats.source_files, 8);
     assert_eq!(stats.symbols_total, 30);
 
@@ -80,4 +92,25 @@ fn substring_search_returns_every_match() {
     assert!(names.contains(&"area"));
 
     assert!(index.find("definitely_not_present").is_empty());
+}
+
+#[test]
+fn scanner_handles_nonexistent_root() {
+    let bad_path = fixture().join("definitely_nonexistent_path_xyz");
+    let result = RepositoryIndex::scan(bad_path);
+    assert!(result.is_err(), "nonexistent root must fail");
+}
+
+#[test]
+fn scanner_diagnostics_and_warning_accessors() {
+    let warning = sift_index::ScanWarning {
+        path: PathBuf::from("test.rs"),
+        message: "unreadable file".to_string(),
+    };
+    assert_eq!(warning.path(), Path::new("test.rs"));
+    assert_eq!(warning.message(), "unreadable file");
+
+    let index = RepositoryIndex::scan(fixture()).unwrap();
+    assert_eq!(index.warnings_count(), 0);
+    assert_eq!(index.stats().warnings_count, 0);
 }

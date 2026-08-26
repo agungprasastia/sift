@@ -31,6 +31,7 @@ pub struct Stats {
     pub files_scanned: u64,
     pub source_files: usize,
     pub symbols_total: usize,
+    pub warnings_count: usize,
     /// Per-language source-file counts, sorted by count desc then name asc.
     pub languages: Vec<(Language, usize)>,
 }
@@ -41,6 +42,7 @@ pub struct RepositoryIndex {
     root: PathBuf,
     files: Vec<SourceFile>,
     files_scanned: u64,
+    warnings_count: usize,
 }
 
 impl RepositoryIndex {
@@ -55,6 +57,7 @@ impl RepositoryIndex {
             root,
             files: output.files,
             files_scanned: output.files_scanned,
+            warnings_count: output.diagnostics.warnings.len(),
         })
     }
 
@@ -74,7 +77,14 @@ impl RepositoryIndex {
             root,
             files: sorted,
             files_scanned,
+            warnings_count: 0,
         }
+    }
+
+    /// Number of warnings encountered during scanning.
+    #[must_use]
+    pub fn warnings_count(&self) -> usize {
+        self.warnings_count
     }
 
     /// All indexed source files, sorted by path.
@@ -116,6 +126,7 @@ impl RepositoryIndex {
             files_scanned: self.files_scanned,
             source_files: self.files.len(),
             symbols_total: self.files.iter().map(|f| f.symbols.len()).sum(),
+            warnings_count: self.warnings_count,
             languages: per_language,
         }
     }

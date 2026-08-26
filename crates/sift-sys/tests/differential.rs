@@ -5,7 +5,7 @@
 //! (real compiled C cannot run under Miri). Inputs cover the defensive edge
 //! cases from `sift_native.h` plus deterministic pseudo-random buffers.
 
-use sift_sys::{count_byte, find_bytes, hash_bytes};
+use sift_sys::{Match, count_byte, find_bytes, find_many_vec, hash_bytes, index_newlines_vec};
 
 /* ---------- Rust reference implementations ---------- */
 
@@ -18,6 +18,27 @@ fn baseline_find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     }
     let last = haystack.len() - needle.len();
     (0..=last).find(|&i| &haystack[i..i + needle.len()] == needle)
+}
+
+fn baseline_index_newlines(data: &[u8]) -> Vec<usize> {
+    data.iter()
+        .enumerate()
+        .filter(|&(_, &b)| b == b'\n')
+        .map(|(i, _)| i)
+        .collect()
+}
+
+fn baseline_find_many(haystack: &[u8], needles: &[&[u8]]) -> Vec<Match> {
+    let mut matches = Vec::new();
+    for (i, needle) in needles.iter().enumerate() {
+        if let Some(offset) = baseline_find(haystack, needle) {
+            matches.push(Match {
+                needle_index: i,
+                offset,
+            });
+        }
+    }
+    matches
 }
 
 fn baseline_hash(data: &[u8]) -> u64 {
@@ -147,6 +168,19 @@ fn randomized_inputs_match_baseline() {
         assert_eq!(
             count_byte(&haystack, value),
             baseline_count(&haystack, value)
+        );
+
+        let needle_slices: Vec<&[u8]> = vec![needle.as_slice(), b"abc", b"\0", b""];
+        assert_eq!(
+            find_many_vec(&haystack, &needle_slices),
+            baseline_find_many(&haystack, &needle_slices),
+            "find_many mismatch on hay={haystack:?}"
+        );
+
+        assert_eq!(
+            index_newlines_vec(&haystack),
+            baseline_index_newlines(&haystack),
+            "index_newlines mismatch on hay={haystack:?}"
         );
     }
 }

@@ -1,6 +1,7 @@
 //! Repository scanner, symbol index and stats for Sift.
 
 mod index;
-mod scanner;
+pub mod scanner;
 
 pub use index::{Match, RepositoryIndex, Stats};
+pub use scanner::{ScanDiagnostics, ScanError, ScanWarning};

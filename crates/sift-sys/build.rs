@@ -24,7 +24,10 @@ fn main() {
         .include("../../native/include")
         .file("../../native/src/search.c")
         .file("../../native/src/hash.c")
-        .file("../../native/src/scan.c");
+        .file("../../native/src/scan.c")
+        .file("../../native/src/arena.c")
+        .file("../../native/src/buffer.c")
+        .file("../../native/src/scanner_state.c");
 
     if build.get_compiler().is_like_msvc() {
         // MSVC-native warnings only; GCC-specific flags would break this build.

@@ -44,6 +44,7 @@ cc = "1"
 clap = { version = "4", features = ["derive"] }
 criterion = "0.8"
 ignore = "0.4"
+memchr = "2"
 thiserror = "2"
 tree-sitter = "0.25"
 tree-sitter-rust = "0.24"
@@ -63,6 +64,7 @@ sift-sys = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+memchr = { workspace = true }
 
 [[bench]]
 name = "ffi_bench"

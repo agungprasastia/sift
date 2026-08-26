@@ -627,6 +627,7 @@ name = "sift"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "memchr",
  "sift-cli",
  "sift-core",
  "sift-index",

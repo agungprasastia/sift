@@ -28,6 +28,29 @@ const MAX_FILE_SIZE: u64 = 1024 * 1024;
 /// Leading bytes inspected for NUL when sniffing for binaries.
 const BINARY_SNIFF_LEN: usize = 8192;
 
+#[derive(Debug, Clone)]
+pub struct ScanWarning {
+    pub path: PathBuf,
+    pub message: String,
+}
+
+impl ScanWarning {
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ScanDiagnostics {
+    pub warnings: Vec<ScanWarning>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
     #[error("cannot walk `{path}`: {source}")]
@@ -56,18 +79,28 @@ impl From<ScanError> for Error {
 }
 
 /// Result of one scan pass.
-pub(super) struct ScanOutput {
+pub struct ScanOutput {
     pub files: Vec<SourceFile>,
     /// Files the walker actually visited after directory pruning.
     pub files_scanned: u64,
+    pub diagnostics: ScanDiagnostics,
 }
 
 /// Walks `root` and produces parsed [`SourceFile`]s in deterministic order.
 ///
-/// Individual unreadable/non-source files are skipped silently; only a
-/// broken walk root is fatal. `.gitignore` is honored even outside git
-/// repositories (`require_git(false)`).
-pub(super) fn scan(root: &Path) -> Result<ScanOutput, ScanError> {
+/// Root repository invalid is fatal. Individual unreadable files or
+/// subtrees are skipped with diagnostics logged, allowing scanning of the rest.
+pub fn scan(root: &Path) -> Result<ScanOutput, ScanError> {
+    if !root.exists() {
+        return Err(ScanError::Walk {
+            path: root.to_path_buf(),
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "root path does not exist",
+            )),
+        });
+    }
+
     let walker = WalkBuilder::new(root)
         .require_git(false)
         .filter_entry(|entry| {
@@ -80,55 +113,99 @@ pub(super) fn scan(root: &Path) -> Result<ScanOutput, ScanError> {
     let mut out = ScanOutput {
         files: Vec::new(),
         files_scanned: 0,
+        diagnostics: ScanDiagnostics::default(),
     };
-    for entry in walker {
-        let entry = entry.map_err(|err| ScanError::Walk {
-            path: root.to_path_buf(),
-            source: Box::new(err),
-        })?;
+    for entry_result in walker {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(err) => {
+                let err_path = match &err {
+                    ignore::Error::WithPath { path, .. } => path.clone(),
+                    _ => root.to_path_buf(),
+                };
+                if err_path == root {
+                    return Err(ScanError::Walk {
+                        path: root.to_path_buf(),
+                        source: Box::new(err),
+                    });
+                }
+                out.diagnostics.warnings.push(ScanWarning {
+                    path: err_path,
+                    message: err.to_string(),
+                });
+                continue;
+            }
+        };
+
         if entry.depth() == 0 || !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
 
         out.files_scanned += 1;
-        if let Some(file) = process_file(entry.path()) {
-            out.files.push(file);
+        match process_file(entry.path()) {
+            Ok(Some(file)) => {
+                out.files.push(file);
+            }
+            Ok(None) => {}
+            Err(warning) => {
+                out.diagnostics.warnings.push(warning);
+            }
         }
     }
     out.files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
 }
 
-/// Reads and parses one file; returns `None` for anything not worth indexing.
-fn process_file(path: &Path) -> Option<SourceFile> {
-    let language = Language::detect(path)?;
+/// Reads and parses one file; returns `Ok(None)` for non-source or skipped files.
+fn process_file(path: &Path) -> Result<Option<SourceFile>, ScanWarning> {
+    let language = match Language::detect(path) {
+        Some(lang) => lang,
+        None => return Ok(None),
+    };
 
-    let metadata = std::fs::metadata(path).ok()?;
+    let metadata = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(err) => {
+            return Err(ScanWarning {
+                path: path.to_path_buf(),
+                message: format!("cannot read metadata: {err}"),
+            });
+        }
+    };
+
     if metadata.len() > MAX_FILE_SIZE {
-        return None;
+        return Ok(None);
     }
 
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(err) => {
+            return Err(ScanWarning {
+                path: path.to_path_buf(),
+                message: format!("cannot read content: {err}"),
+            });
+        }
+    };
 
-    // Binary sniff through the native accelerator: any NUL in the leading
-    // chunk means "not source code".
     let sniff_len = bytes.len().min(BINARY_SNIFF_LEN);
     if sift_sys::count_byte(&bytes[..sniff_len], 0) > 0 {
-        return None;
+        return Ok(None);
     }
 
-    // tree-sitter node text requires valid UTF-8; enforce once here.
-    let text = String::from_utf8(bytes).ok()?;
+    let text = match String::from_utf8(bytes) {
+        Ok(t) => t,
+        Err(_) => return Ok(None),
+    };
 
     let symbols = extract_symbols(language, text.as_bytes());
     let content_hash = sift_sys::hash_bytes(text.as_bytes());
 
-    Some(SourceFile {
+    Ok(Some(SourceFile {
         path: path.to_path_buf(),
         language,
         symbols,
         content_hash,
-    })
+    }))
 }
 
 #[cfg(test)]

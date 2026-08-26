@@ -76,6 +76,172 @@ uint64_t sift_hash_bytes(const uint8_t *data, size_t len);
  */
 size_t sift_count_byte(const uint8_t *data, size_t len, uint8_t value);
 
+/*
+ * Fixed-capacity linear arena allocator.
+ *
+ * Contract:
+ *   - SiftArena owns arena->data.
+ *   - Memory returned by sift_arena_alloc is borrowed.
+ *   - Borrowed memory must NOT be freed individually.
+ *   - Borrowed memory remains valid until sift_arena_reset or sift_arena_destroy.
+ *   - sift_arena_destroy zeroes internal fields and frees arena->data.
+ */
+typedef struct {
+    uint8_t *data;
+    size_t capacity;
+    size_t used;
+} SiftArena;
+
+/*
+ * Initialize an arena with the requested capacity in bytes.
+ * Returns 0 on success, -1 on allocation failure or invalid argument.
+ */
+int sift_arena_init(SiftArena *arena, size_t capacity);
+
+/*
+ * Allocate `size` bytes aligned to `alignment` from the arena.
+ * `alignment` must be a power of two (or 0 for default 8-byte alignment).
+ * Returns pointer to aligned memory, or NULL on failure / overflow / out-of-memory.
+ */
+void *sift_arena_alloc(SiftArena *arena, size_t size, size_t alignment);
+
+/*
+ * Reset arena usage back to 0 without releasing the backing buffer.
+ */
+void sift_arena_reset(SiftArena *arena);
+
+/*
+ * Release backing buffer and zero out arena structure.
+ */
+void sift_arena_destroy(SiftArena *arena);
+
+/*
+ * Dynamic growable byte buffer.
+ *
+ * Contract:
+ *   - SiftBuffer owns buffer->data.
+ *   - Reallocates safely with temporary pointer; on failure old data remains valid.
+ *   - Integer overflow checked before arithmetic.
+ *   - sift_buffer_destroy frees buffer->data and zeroes fields.
+ */
+typedef struct {
+    uint8_t *data;
+    size_t len;
+    size_t capacity;
+} SiftBuffer;
+
+/*
+ * Initialize buffer with `initial_capacity` bytes.
+ * Returns 0 on success, -1 on allocation failure or invalid argument.
+ */
+int sift_buffer_init(SiftBuffer *buffer, size_t initial_capacity);
+
+/*
+ * Ensure capacity for at least `additional` more bytes beyond `len`.
+ * Returns 0 on success, -1 on overflow or allocation failure.
+ */
+int sift_buffer_reserve(SiftBuffer *buffer, size_t additional);
+
+/*
+ * Append `len` bytes from `data` to buffer.
+ * Returns 0 on success, -1 on overflow or allocation failure.
+ */
+int sift_buffer_append(SiftBuffer *buffer, const uint8_t *data, size_t len);
+
+/*
+ * Reset buffer length to 0 without releasing capacity.
+ */
+void sift_buffer_clear(SiftBuffer *buffer);
+
+/*
+ * Release backing buffer and zero out buffer structure.
+ */
+void sift_buffer_destroy(SiftBuffer *buffer);
+
+/*
+ * Stateful native scanner context.
+ *
+ * Contract:
+ *   - SiftScanner owns its internal scratch arena.
+ *   - Does not store borrowed pointers from callers.
+ *   - Explicit lifecycle: init -> use / reset -> destroy.
+ */
+typedef struct {
+    SiftArena scratch;
+    size_t bytes_scanned;
+    size_t scans;
+} SiftScanner;
+
+/*
+ * Initialize native scanner with `scratch_capacity` scratch arena.
+ * Returns 0 on success, -1 on failure or invalid argument.
+ */
+int sift_scanner_init(SiftScanner *scanner, size_t scratch_capacity);
+
+/*
+ * Reset scratch arena usage while preserving scanner instance.
+ */
+void sift_scanner_reset(SiftScanner *scanner);
+
+/*
+ * Release internal scratch arena and zero out scanner structure.
+ */
+void sift_scanner_destroy(SiftScanner *scanner);
+
+/*
+ * =========================================================================
+ * Batch Searching & Indexing Primitives
+ * =========================================================================
+ */
+
+/* Read-only slice representation passed from Rust. */
+typedef struct {
+    const uint8_t *data;
+    size_t len;
+} SiftSlice;
+
+/* Search match result associating needle index with its byte offset. */
+typedef struct {
+    size_t needle_index;
+    size_t offset;
+} SiftMatch;
+
+/*
+ * Search for first occurrence of each needle in `needles` inside `haystack`.
+ *
+ * Contract:
+ *   - Rust owns haystack, needles, and output.
+ *   - C borrows all memory for duration of call only.
+ *   - Empty needles match at offset 0.
+ *   - Needles not found are omitted from output.
+ *   - Writes at most `output_capacity` matches.
+ *   - Returns total number of matches written (always <= output_capacity).
+ */
+size_t sift_find_many(
+    const uint8_t *haystack,
+    size_t haystack_len,
+    const SiftSlice *needles,
+    size_t needle_count,
+    SiftMatch *output,
+    size_t output_capacity
+);
+
+/*
+ * Record byte offsets of every newline ('\n') in `data` into `output`.
+ *
+ * Contract:
+ *   - Rust owns data and output buffers.
+ *   - C borrows memory for duration of call only.
+ *   - Writes at most `output_capacity` offsets.
+ *   - Returns count of newline offsets written (always <= output_capacity).
+ */
+size_t sift_index_newlines(
+    const uint8_t *data,
+    size_t len,
+    size_t *output,
+    size_t output_capacity
+);
+
 #ifdef __cplusplus
 }
 #endif

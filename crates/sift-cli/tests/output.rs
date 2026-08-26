@@ -52,7 +52,7 @@ fn stats_renders_full_report() {
     let index = RepositoryIndex::scan(fixture()).unwrap();
     let rendered = render_stats(&index);
 
-    assert!(rendered.starts_with("Files scanned: 10\n"));
+    assert!(rendered.starts_with("Files scanned: 11\n"));
     assert!(rendered.contains("Source files: 8\n"));
     assert!(rendered.contains("Symbols: 30\n"));
     assert!(rendered.contains("\nLanguages:\n"));
