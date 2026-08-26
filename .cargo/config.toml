@@ -1,0 +1,4 @@
+# Sift cargo aliases.
+# `cargo sift map .` == `cargo run -p sift-cli -- map .`
+[alias]
+sift = "run -p sift-cli --"

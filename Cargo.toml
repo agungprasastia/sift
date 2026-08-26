@@ -1,0 +1,82 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/sift-cli",
+    "crates/sift-core",
+    "crates/sift-index",
+    "crates/sift-parser",
+    "crates/sift-sys",
+]
+
+[package]
+name = "sift"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Context/token optimizer for coding AI agents (umbrella crate)."
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+panic = "deny"
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+
+[workspace.dependencies]
+# internal
+sift-core = { path = "crates/sift-core" }
+sift-parser = { path = "crates/sift-parser" }
+sift-index = { path = "crates/sift-index" }
+sift-cli = { path = "crates/sift-cli" }
+sift-sys = { path = "crates/sift-sys" }
+
+# external
+anyhow = "1"
+cc = "1"
+clap = { version = "4", features = ["derive"] }
+criterion = "0.8"
+ignore = "0.4"
+thiserror = "2"
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+tree-sitter-go = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+
+[dependencies]
+sift-cli = { workspace = true }
+sift-core = { workspace = true }
+sift-index = { workspace = true }
+sift-parser = { workspace = true }
+sift-sys = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "ffi_bench"
+harness = false
+
+[[bench]]
+name = "scanner_bench"
+harness = false
+
+[[bench]]
+name = "parser_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

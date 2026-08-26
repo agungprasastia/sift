@@ -1,0 +1,14 @@
+[package]
+name = "sift-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Safe bindings to the Sift C11 byte-acceleration kernel."
+links = "sift_native"
+build = "build.rs"
+
+[build-dependencies]
+cc = { workspace = true }
+
+[lints]
+workspace = true

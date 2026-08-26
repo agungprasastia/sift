@@ -1,0 +1,12 @@
+[package]
+name = "sift-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core data model and language detection for Sift."
+
+[dependencies]
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "sift-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command line interface for Sift (map / find / stats)."
+
+[[bin]]
+name = "sift"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+sift-core = { workspace = true }
+sift-index = { workspace = true }
+sift-sys = { workspace = true }
+
+[lints]
+workspace = true

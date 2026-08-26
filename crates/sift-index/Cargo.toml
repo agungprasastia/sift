@@ -1,0 +1,16 @@
+[package]
+name = "sift-index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Repository scanner, symbol index and stats for Sift."
+
+[dependencies]
+ignore = { workspace = true }
+sift-core = { workspace = true }
+sift-parser = { workspace = true }
+sift-sys = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
