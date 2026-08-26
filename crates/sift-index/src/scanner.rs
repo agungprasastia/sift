@@ -188,7 +188,7 @@ fn process_file(path: &Path) -> Result<Option<SourceFile>, ScanWarning> {
     };
 
     let sniff_len = bytes.len().min(BINARY_SNIFF_LEN);
-    if sift_sys::count_byte(&bytes[..sniff_len], 0) > 0 {
+    if memchr::memchr(0, &bytes[..sniff_len]).is_some() {
         return Ok(None);
     }
 
@@ -198,7 +198,7 @@ fn process_file(path: &Path) -> Result<Option<SourceFile>, ScanWarning> {
     };
 
     let symbols = extract_symbols(language, text.as_bytes());
-    let content_hash = sift_sys::hash_bytes(text.as_bytes());
+    let content_hash = sift_core::fnv1a_hash(text.as_bytes());
 
     Ok(Some(SourceFile {
         path: path.to_path_buf(),

@@ -37,6 +37,17 @@ extern "C" {
 #define SIFT_NOT_FOUND SIZE_MAX
 
 /*
+ * Unified native status / error codes.
+ */
+typedef enum {
+    SIFT_OK = 0,
+    SIFT_ERR_ALLOC = -1,
+    SIFT_ERR_OVERFLOW = -2,
+    SIFT_ERR_INVALID_ARGUMENT = -3,
+    SIFT_ERR_CAPACITY = -4
+} SiftStatus;
+
+/*
  * Return the byte offset of the first occurrence of `needle` inside `data`.
  *
  * Contract:
@@ -94,9 +105,9 @@ typedef struct {
 
 /*
  * Initialize an arena with the requested capacity in bytes.
- * Returns 0 on success, -1 on allocation failure or invalid argument.
+ * Returns SIFT_OK on success, or SiftStatus error code.
  */
-int sift_arena_init(SiftArena *arena, size_t capacity);
+SiftStatus sift_arena_init(SiftArena *arena, size_t capacity);
 
 /*
  * Allocate `size` bytes aligned to `alignment` from the arena.
@@ -132,21 +143,21 @@ typedef struct {
 
 /*
  * Initialize buffer with `initial_capacity` bytes.
- * Returns 0 on success, -1 on allocation failure or invalid argument.
+ * Returns SIFT_OK on success, or SiftStatus error code.
  */
-int sift_buffer_init(SiftBuffer *buffer, size_t initial_capacity);
+SiftStatus sift_buffer_init(SiftBuffer *buffer, size_t initial_capacity);
 
 /*
  * Ensure capacity for at least `additional` more bytes beyond `len`.
- * Returns 0 on success, -1 on overflow or allocation failure.
+ * Returns SIFT_OK on success, or SiftStatus error code.
  */
-int sift_buffer_reserve(SiftBuffer *buffer, size_t additional);
+SiftStatus sift_buffer_reserve(SiftBuffer *buffer, size_t additional);
 
 /*
  * Append `len` bytes from `data` to buffer.
- * Returns 0 on success, -1 on overflow or allocation failure.
+ * Returns SIFT_OK on success, or SiftStatus error code.
  */
-int sift_buffer_append(SiftBuffer *buffer, const uint8_t *data, size_t len);
+SiftStatus sift_buffer_append(SiftBuffer *buffer, const uint8_t *data, size_t len);
 
 /*
  * Reset buffer length to 0 without releasing capacity.
@@ -174,9 +185,9 @@ typedef struct {
 
 /*
  * Initialize native scanner with `scratch_capacity` scratch arena.
- * Returns 0 on success, -1 on failure or invalid argument.
+ * Returns SIFT_OK on success, or SiftStatus error code.
  */
-int sift_scanner_init(SiftScanner *scanner, size_t scratch_capacity);
+SiftStatus sift_scanner_init(SiftScanner *scanner, size_t scratch_capacity);
 
 /*
  * Reset scratch arena usage while preserving scanner instance.

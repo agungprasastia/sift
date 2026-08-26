@@ -3,10 +3,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-int sift_arena_init(SiftArena *arena, size_t capacity)
+SiftStatus sift_arena_init(SiftArena *arena, size_t capacity)
 {
     if (arena == NULL) {
-        return -1;
+        return SIFT_ERR_INVALID_ARGUMENT;
     }
 
     arena->data = NULL;
@@ -14,17 +14,17 @@ int sift_arena_init(SiftArena *arena, size_t capacity)
     arena->used = 0;
 
     if (capacity == 0) {
-        return 0;
+        return SIFT_OK;
     }
 
     arena->data = (uint8_t *)malloc(capacity);
     if (arena->data == NULL) {
-        return -1;
+        return SIFT_ERR_ALLOC;
     }
 
     arena->capacity = capacity;
     arena->used = 0;
-    return 0;
+    return SIFT_OK;
 }
 
 void *sift_arena_alloc(SiftArena *arena, size_t size, size_t alignment)

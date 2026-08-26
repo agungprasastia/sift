@@ -112,14 +112,17 @@ fn fuzz_byte_primitives_10k_runs() {
         );
 
         // 4. index_newlines
-        assert_eq!(index_newlines_vec(&hay), baseline_index_newlines(&hay));
+        assert_eq!(
+            index_newlines_vec(&hay).expect("index_newlines"),
+            baseline_index_newlines(&hay)
+        );
 
         // 5. find_many with random needle set including duplicates and empty
         let needle2 = rng.random_bytes(8);
         let needle3 = b"".to_vec();
         let needle_slices = [needle.as_slice(), needle2.as_slice(), needle3.as_slice()];
         assert_eq!(
-            find_many_vec(&hay, &needle_slices),
+            find_many_vec(&hay, &needle_slices).expect("find_many"),
             baseline_find_many(&hay, &needle_slices)
         );
     }

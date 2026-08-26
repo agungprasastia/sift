@@ -7,6 +7,7 @@ description = "Repository scanner, symbol index and stats for Sift."
 
 [dependencies]
 ignore = { workspace = true }
+memchr = { workspace = true }
 sift-core = { workspace = true }
 sift-parser = { workspace = true }
 sift-sys = { workspace = true }

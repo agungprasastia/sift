@@ -172,13 +172,13 @@ fn randomized_inputs_match_baseline() {
 
         let needle_slices: Vec<&[u8]> = vec![needle.as_slice(), b"abc", b"\0", b""];
         assert_eq!(
-            find_many_vec(&haystack, &needle_slices),
+            find_many_vec(&haystack, &needle_slices).expect("find_many_vec"),
             baseline_find_many(&haystack, &needle_slices),
             "find_many mismatch on hay={haystack:?}"
         );
 
         assert_eq!(
-            index_newlines_vec(&haystack),
+            index_newlines_vec(&haystack).expect("index_newlines_vec"),
             baseline_index_newlines(&haystack),
             "index_newlines mismatch on hay={haystack:?}"
         );

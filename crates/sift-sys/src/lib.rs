@@ -76,6 +76,8 @@ pub enum NativeError {
     AllocationFailed,
     Overflow,
     InvalidArgument,
+    CapacityExceeded,
+    NativeInvariantViolation,
 }
 
 impl std::fmt::Display for NativeError {
@@ -84,11 +86,25 @@ impl std::fmt::Display for NativeError {
             Self::AllocationFailed => write!(f, "native allocation failed"),
             Self::Overflow => write!(f, "arithmetic overflow"),
             Self::InvalidArgument => write!(f, "invalid argument"),
+            Self::CapacityExceeded => write!(f, "capacity exceeded"),
+            Self::NativeInvariantViolation => write!(f, "native invariant violation"),
         }
     }
 }
 
 impl std::error::Error for NativeError {}
+
+/// Convert a C `SiftStatus` integer code to a typed `Result<(), NativeError>`.
+pub fn status_to_result(code: i32) -> Result<(), NativeError> {
+    match code {
+        0 => Ok(()),
+        -1 => Err(NativeError::AllocationFailed),
+        -2 => Err(NativeError::Overflow),
+        -3 => Err(NativeError::InvalidArgument),
+        -4 => Err(NativeError::CapacityExceeded),
+        _ => Err(NativeError::NativeInvariantViolation),
+    }
+}
 
 /// Raw C-compatible arena structure matching `SiftArena` in `sift_native.h`.
 #[repr(C)]
@@ -124,11 +140,8 @@ impl Arena {
             // `&mut raw` is a valid, uniquely referenced stack variable matching `SiftArena` layout.
             sift_arena_init(&mut raw, capacity)
         };
-        if ret == 0 {
-            Ok(Self { raw })
-        } else {
-            Err(NativeError::AllocationFailed)
-        }
+        status_to_result(ret)?;
+        Ok(Self { raw })
     }
 
     /// Total capacity in bytes.
@@ -214,7 +227,7 @@ impl NativeBuffer {
     /// Create a new native dynamic buffer with `initial_capacity`.
     ///
     /// # Errors
-    /// Returns `NativeError::AllocationFailed` if allocation fails.
+    /// Returns `NativeError` if initialization or allocation fails.
     pub fn with_capacity(initial_capacity: usize) -> Result<Self, NativeError> {
         let mut raw = SiftBuffer {
             data: std::ptr::null_mut(),
@@ -226,11 +239,8 @@ impl NativeBuffer {
             // `&mut raw` is a valid uniquely referenced stack variable matching `SiftBuffer` layout.
             sift_buffer_init(&mut raw, initial_capacity)
         };
-        if ret == 0 {
-            Ok(Self { raw })
-        } else {
-            Err(NativeError::AllocationFailed)
-        }
+        status_to_result(ret)?;
+        Ok(Self { raw })
     }
 
     /// Current length in bytes.
@@ -254,24 +264,20 @@ impl NativeBuffer {
     /// Reserve space for at least `additional` more bytes.
     ///
     /// # Errors
-    /// Returns `NativeError::AllocationFailed` on allocation failure or integer overflow.
+    /// Returns `NativeError` on allocation failure or integer overflow.
     pub fn reserve(&mut self, additional: usize) -> Result<(), NativeError> {
         let ret = unsafe {
             // SAFETY: [Category 8 — FFI boundary UB]
             // `&mut self.raw` is uniquely borrowed. `sift_buffer_reserve` handles reallocation safely.
             sift_buffer_reserve(&mut self.raw, additional)
         };
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(NativeError::AllocationFailed)
-        }
+        status_to_result(ret)
     }
 
     /// Append a slice of bytes to the buffer.
     ///
     /// # Errors
-    /// Returns `NativeError::AllocationFailed` on allocation failure or integer overflow.
+    /// Returns `NativeError` on allocation failure or integer overflow.
     pub fn append(&mut self, data: &[u8]) -> Result<(), NativeError> {
         if data.is_empty() {
             return Ok(());
@@ -281,11 +287,7 @@ impl NativeBuffer {
             // `data` is valid for reads of `data.len()` bytes. `&mut self.raw` is uniquely borrowed.
             sift_buffer_append(&mut self.raw, data.as_ptr(), data.len())
         };
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(NativeError::AllocationFailed)
-        }
+        status_to_result(ret)
     }
 
     /// View the buffer content as an immutable byte slice.
@@ -344,7 +346,7 @@ impl NativeScanner {
     /// Create a new native scanner with `scratch_capacity` bytes of scratch arena.
     ///
     /// # Errors
-    /// Returns `NativeError::AllocationFailed` if native initialization fails.
+    /// Returns `NativeError` if native initialization fails.
     pub fn new(scratch_capacity: usize) -> Result<Self, NativeError> {
         let mut raw = SiftScanner {
             scratch: SiftArena {
@@ -360,11 +362,8 @@ impl NativeScanner {
             // `&mut raw` is a valid uniquely referenced stack variable matching `SiftScanner` layout.
             sift_scanner_init(&mut raw, scratch_capacity)
         };
-        if ret == 0 {
-            Ok(Self { raw })
-        } else {
-            Err(NativeError::AllocationFailed)
-        }
+        status_to_result(ret)?;
+        Ok(Self { raw })
     }
 
     /// Total bytes scanned recorded by this instance.
@@ -448,9 +447,12 @@ pub fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         )
     };
 
+    if offset == usize::MAX {
+        return None;
+    }
+
     // Rust validates the C result before use: check that the entire match
-    // fits within haystack bounds (including checked_add overflow guard),
-    // which also rejects SIZE_MAX sentinel.
+    // fits within haystack bounds (including checked_add overflow guard).
     let end = offset.checked_add(needle.len())?;
     if end > haystack.len() {
         None
@@ -522,10 +524,16 @@ pub struct Match {
 /// Search for occurrences of multiple `needles` inside `haystack` in a single FFI call.
 ///
 /// Returns the number of matches written to `output`.
-#[must_use]
-pub fn find_many(haystack: &[u8], needles: &[&[u8]], output: &mut [Match]) -> usize {
+///
+/// # Errors
+/// Returns `NativeError::NativeInvariantViolation` if C returns invalid counts or offsets.
+pub fn find_many(
+    haystack: &[u8],
+    needles: &[&[u8]],
+    output: &mut [Match],
+) -> Result<usize, NativeError> {
     if needles.is_empty() || output.is_empty() {
-        return 0;
+        return Ok(0);
     }
 
     let c_needles: Vec<SiftSlice> = needles
@@ -560,30 +568,39 @@ pub fn find_many(haystack: &[u8], needles: &[&[u8]], output: &mut [Match]) -> us
         )
     };
 
-    let safe_count = count.min(output.len());
-    let mut written = 0;
-    for &m in &c_output[..safe_count] {
-        if m.needle_index < needles.len() {
-            let needle_len = needles[m.needle_index].len();
-            if let Some(end) = m.offset.checked_add(needle_len)
-                && end <= haystack.len()
-            {
-                output[written] = Match {
-                    needle_index: m.needle_index,
-                    offset: m.offset,
-                };
-                written += 1;
-            }
-        }
+    if count > output.len() {
+        return Err(NativeError::NativeInvariantViolation);
     }
-    written
+
+    let mut written = 0;
+    for &m in &c_output[..count] {
+        if m.needle_index >= needles.len() || m.offset == usize::MAX {
+            return Err(NativeError::NativeInvariantViolation);
+        }
+        let needle_len = needles[m.needle_index].len();
+        let end = m
+            .offset
+            .checked_add(needle_len)
+            .ok_or(NativeError::NativeInvariantViolation)?;
+        if end > haystack.len() {
+            return Err(NativeError::NativeInvariantViolation);
+        }
+        output[written] = Match {
+            needle_index: m.needle_index,
+            offset: m.offset,
+        };
+        written += 1;
+    }
+    Ok(written)
 }
 
 /// Search for multiple `needles` inside `haystack` and return all matches in a `Vec`.
-#[must_use]
-pub fn find_many_vec(haystack: &[u8], needles: &[&[u8]]) -> Vec<Match> {
+///
+/// # Errors
+/// Returns `NativeError::NativeInvariantViolation` if C returns invalid counts or offsets.
+pub fn find_many_vec(haystack: &[u8], needles: &[&[u8]]) -> Result<Vec<Match>, NativeError> {
     if needles.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut out = vec![
         Match {
@@ -592,18 +609,21 @@ pub fn find_many_vec(haystack: &[u8], needles: &[&[u8]]) -> Vec<Match> {
         };
         needles.len()
     ];
-    let count = find_many(haystack, needles, &mut out);
+    let count = find_many(haystack, needles, &mut out)?;
     out.truncate(count);
-    out
+    Ok(out)
 }
 
 /// Write byte offsets of newline ('\n') characters in `data` into `output`.
 ///
 /// Returns the number of offsets written (always `<= output.len()`).
-#[must_use]
-pub fn index_newlines(data: &[u8], output: &mut [usize]) -> usize {
+///
+/// # Errors
+/// Returns `NativeError::NativeInvariantViolation` if C returns invalid counts, out-of-bound
+/// offsets, non-newline target bytes, or non-monotonic offsets.
+pub fn index_newlines(data: &[u8], output: &mut [usize]) -> Result<usize, NativeError> {
     if data.is_empty() || output.is_empty() {
-        return 0;
+        return Ok(0);
     }
 
     let count = unsafe {
@@ -614,27 +634,41 @@ pub fn index_newlines(data: &[u8], output: &mut [usize]) -> usize {
         sift_index_newlines(data.as_ptr(), data.len(), output.as_mut_ptr(), output.len())
     };
 
-    let safe_count = count.min(output.len());
-    for &offset in &output[..safe_count] {
-        debug_assert!(offset < data.len(), "newline offset outside bounds");
+    if count > output.len() {
+        return Err(NativeError::NativeInvariantViolation);
     }
-    safe_count
+
+    let mut prev_offset: Option<usize> = None;
+    for &offset in &output[..count] {
+        if offset >= data.len() || data[offset] != b'\n' {
+            return Err(NativeError::NativeInvariantViolation);
+        }
+        if let Some(prev) = prev_offset
+            && offset <= prev
+        {
+            return Err(NativeError::NativeInvariantViolation);
+        }
+        prev_offset = Some(offset);
+    }
+    Ok(count)
 }
 
 /// Collect all byte offsets of newline ('\n') characters into a `Vec<usize>`.
-#[must_use]
-pub fn index_newlines_vec(data: &[u8]) -> Vec<usize> {
+///
+/// # Errors
+/// Returns `NativeError::NativeInvariantViolation` if C returns corrupted offset data.
+pub fn index_newlines_vec(data: &[u8]) -> Result<Vec<usize>, NativeError> {
     if data.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let total_newlines = count_byte(data, b'\n');
     if total_newlines == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut out = vec![0usize; total_newlines];
-    let count = index_newlines(data, &mut out);
+    let count = index_newlines(data, &mut out)?;
     out.truncate(count);
-    out
+    Ok(out)
 }
 
 #[cfg(test)]

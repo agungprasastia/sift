@@ -658,6 +658,7 @@ name = "sift-index"
 version = "0.1.0"
 dependencies = [
  "ignore",
+ "memchr",
  "sift-core",
  "sift-parser",
  "sift-sys",
