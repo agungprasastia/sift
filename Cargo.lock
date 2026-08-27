@@ -690,7 +690,6 @@ dependencies = [
  "sift-core",
  "sift-index",
  "sift-parser",
- "sift-sys",
 ]
 
 [[package]]
@@ -701,7 +700,6 @@ dependencies = [
  "clap",
  "sift-core",
  "sift-index",
- "sift-sys",
 ]
 
 [[package]]
@@ -719,7 +717,6 @@ dependencies = [
  "memchr",
  "sift-core",
  "sift-parser",
- "sift-sys",
  "tempfile",
  "thiserror",
 ]
@@ -737,14 +734,6 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
-]
-
-[[package]]
-name = "sift-sys"
-version = "0.1.0"
-dependencies = [
- "cc",
- "memchr",
 ]
 
 [[package]]
