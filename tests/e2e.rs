@@ -40,7 +40,7 @@ fn find_command_reports_matches() {
 }
 
 #[test]
-fn stats_command_prints_native_backend() {
+fn stats_command_prints_repository_stats() {
     let mut sink: Vec<u8> = Vec::new();
     execute(Command::Stats { path: fixture() }, &mut sink).unwrap();
 
@@ -48,8 +48,8 @@ fn stats_command_prints_native_backend() {
     assert!(text.contains("Files scanned: 11"));
     assert!(text.contains("Source files: 8"));
     assert!(text.contains("Symbols: 30"));
-    assert!(text.contains("Native engine: enabled"));
-    assert!(text.ends_with("Backend: C11\n"));
+    assert!(!text.contains("Native engine"));
+    assert!(!text.contains("Backend:"));
 }
 
 #[test]

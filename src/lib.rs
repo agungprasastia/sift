@@ -5,4 +5,3 @@ pub use sift_cli;
 pub use sift_core;
 pub use sift_index;
 pub use sift_parser;
-pub use sift_sys;

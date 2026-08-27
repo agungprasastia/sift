@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use sift_index::RepositoryIndex;
-use sift_sys::BACKEND_NAME;
 
 /// Sift — context/token optimizer for coding AI (M0).
 #[derive(Debug, Parser)]
@@ -164,9 +163,6 @@ pub fn render_stats(index: &RepositoryIndex) -> String {
         let _ = writeln!(body, "{:<width$}{}", lang.name(), count, width = width);
     }
 
-    let _ = writeln!(body);
-    let _ = writeln!(body, "Native engine: enabled");
-    let _ = writeln!(body, "Backend: {BACKEND_NAME}");
     body
 }
 
@@ -203,8 +199,8 @@ mod tests {
         let index = RepositoryIndex::from_parts(PathBuf::from("."), vec![], 0);
         let rendered = render_stats(&index);
         assert!(rendered.contains("Files scanned: 0"));
-        assert!(rendered.contains("Native engine: enabled"));
-        assert!(rendered.contains(&format!("Backend: {BACKEND_NAME}")));
+        assert!(!rendered.contains("Native engine"));
+        assert!(!rendered.contains("Backend:"));
         assert!(!rendered.contains(Language::Rust.name()));
     }
 }

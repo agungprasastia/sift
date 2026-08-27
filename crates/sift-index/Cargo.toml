@@ -10,7 +10,6 @@ ignore = { workspace = true }
 memchr = { workspace = true }
 sift-core = { workspace = true }
 sift-parser = { workspace = true }
-sift-sys = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

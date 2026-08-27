@@ -14,7 +14,6 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 sift-core = { workspace = true }
 sift-index = { workspace = true }
-sift-sys = { workspace = true }
 
 [lints]
 workspace = true

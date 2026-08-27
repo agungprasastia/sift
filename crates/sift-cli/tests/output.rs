@@ -56,6 +56,6 @@ fn stats_renders_full_report() {
     assert!(rendered.contains("Source files: 8\n"));
     assert!(rendered.contains("Symbols: 30\n"));
     assert!(rendered.contains("\nLanguages:\n"));
-    assert!(rendered.contains("Native engine: enabled"));
-    assert!(rendered.ends_with("Backend: C11\n"));
+    assert!(!rendered.contains("Native engine"));
+    assert!(!rendered.contains("Backend:"));
 }

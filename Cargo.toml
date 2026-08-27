@@ -5,7 +5,6 @@ members = [
     "crates/sift-core",
     "crates/sift-index",
     "crates/sift-parser",
-    "crates/sift-sys",
 ]
 
 [package]
@@ -36,11 +35,9 @@ sift-core = { path = "crates/sift-core" }
 sift-parser = { path = "crates/sift-parser" }
 sift-index = { path = "crates/sift-index" }
 sift-cli = { path = "crates/sift-cli" }
-sift-sys = { path = "crates/sift-sys" }
 
 # external
 anyhow = "1"
-cc = "1"
 clap = { version = "4", features = ["derive"] }
 criterion = "0.8"
 ignore = "0.4"
@@ -61,14 +58,13 @@ sift-cli = { workspace = true }
 sift-core = { workspace = true }
 sift-index = { workspace = true }
 sift-parser = { workspace = true }
-sift-sys = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
 memchr = { workspace = true }
 
 [[bench]]
-name = "ffi_bench"
+name = "search_bench"
 harness = false
 
 [[bench]]
